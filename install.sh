@@ -19,12 +19,6 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Проверка прав
-if [ "$EUID" -eq 0 ]; then 
-    print_error "Не запускайте скрипт от root!"
-    exit 1
-fi
-
 print_message "==================================="
 print_message "Установка бота VK to Telegram"
 print_message "==================================="
