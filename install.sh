@@ -1,32 +1,41 @@
 #!/bin/bash
+
 # Цвета для вывода
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Функция для вывода с цветом
-print_message() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+# Функции для вывода
+print_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+print_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+print_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
+# Проверка прав
+if [ "$EUID" -eq 0 ]; then 
+    print_error "Не запускайте скрипт от root! Используйте обычного пользователя."
+    exit 1
+fi
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_message "==================================="
-print_message "Установка бота VK to Telegram"
-print_message "==================================="
+clear
+echo "============================================="
+echo "   Установка VK to Telegram бота как сервис"
+echo "============================================="
 echo ""
 
+# Определяем пользователя и домашнюю директорию
+USER_NAME=$(whoami)
+USER_HOME=$HOME
+SERVICE_NAME="vktotg-bot"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+PROJECT_DIR="${USER_HOME}/vktotg-bot"
+
 # 1. Проверка и установка Node.js
-print_message "Проверка Node.js..."
+print_step "1. Проверка Node.js..."
 if ! command -v node &> /dev/null; then
-    print_warning "Node.js не найден. Устанавливаем..."
+    print_warn "Node.js не найден. Устанавливаем..."
     
     # Определяем ОС
     if [ -f /etc/debian_version ]; then
@@ -42,55 +51,78 @@ if ! command -v node &> /dev/null; then
         exit 1
     fi
 else
-    print_message "Node.js уже установлен: $(node --version)"
+    print_info "Node.js уже установлен: $(node --version)"
 fi
 
 # 2. Проверка npm
-print_message "Проверка npm..."
+print_step "2. Проверка npm..."
 if ! command -v npm &> /dev/null; then
     print_error "npm не найден. Установите Node.js полностью."
     exit 1
 else
-    print_message "npm уже установлен: $(npm --version)"
+    print_info "npm уже установлен: $(npm --version)"
 fi
 
-# 3. Создание директории проекта
-PROJECT_DIR="$HOME/vktotg-bot"
-print_message "Создание директории проекта: $PROJECT_DIR"
-mkdir -p "$PROJECT_DIR"
+# 3. Проверка git (опционально)
+print_step "3. Проверка git..."
+if ! command -v git &> /dev/null; then
+    print_warn "Git не найден. Будет использована прямая загрузка."
+    GIT_AVAILABLE=false
+else
+    print_info "Git найден: $(git --version)"
+    GIT_AVAILABLE=true
+fi
+
+# 4. Создание директории проекта
+print_step "4. Создание директории проекта..."
+if [ -d "$PROJECT_DIR" ]; then
+    print_warn "Директория $PROJECT_DIR уже существует."
+    read -p "Перезаписать? (y/n): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$PROJECT_DIR"
+        mkdir -p "$PROJECT_DIR"
+        print_info "Директория очищена"
+    else
+        print_info "Используем существующую директорию"
+    fi
+else
+    mkdir -p "$PROJECT_DIR"
+    print_info "Директория создана: $PROJECT_DIR"
+fi
+
 cd "$PROJECT_DIR"
 
-# 4. Клонирование или загрузка кода
-print_message "Загрузка кода бота..."
-if [ -d ".git" ]; then
-    git pull
+# 5. Загрузка кода
+print_step "5. Загрузка кода бота..."
+if [ "$GIT_AVAILABLE" = true ]; then
+    git clone https://github.com/Crynnar/vktotg.git .
 else
-    # Если есть git, клонируем репозиторий
-    if command -v git &> /dev/null; then
-        git clone https://github.com/Crynnar/vktotg.git .
-    else
-        print_warning "Git не найден. Скачиваем вручную..."
-        # Скачиваем архив с релиза
-        curl -L https://github.com/Crynnar/vktotg/archive/refs/tags/test.tar.gz -o vktotg.tar.gz
-        tar -xzf vktotg.tar.gz --strip-components=1
-        rm vktotg.tar.gz
-    fi
+    # Скачиваем архив с GitHub
+    curl -L https://github.com/Crynnar/vktotg/archive/refs/tags/test.tar.gz -o vktotg.tar.gz
+    tar -xzf vktotg.tar.gz --strip-components=1
+    rm vktotg.tar.gz
 fi
 
-# 5. Установка зависимостей
-print_message "Установка зависимостей..."
+# 6. Установка зависимостей
+print_step "6. Установка зависимостей..."
 npm install
 
-# 6. Создание файла конфигурации из примера
-print_message "Настройка конфигурации..."
+# 7. Установка PM2 глобально
+print_step "7. Установка PM2 для управления процессами..."
+npm install -g pm2
+
+# 8. Создание файла конфигурации
+print_step "8. Настройка конфигурации..."
+
+# Проверяем наличие примера конфига
 if [ -f "config.example.js" ]; then
     cp config.example.js config.js
-    print_message "Создан config.js. Отредактируйте его перед запуском."
+    print_info "Создан config.js из примера"
 elif [ -f ".env.example" ]; then
     cp .env.example .env
-    print_message "Создан .env. Отредактируйте его перед запуском."
+    print_info "Создан .env из примера"
 else
-    print_warning "Файл примера конфигурации не найден."
     # Создаем базовый config.js
     cat > config.js << 'EOF'
 module.exports = {
@@ -107,70 +139,226 @@ module.exports = {
     }
 };
 EOF
-    print_message "Создан базовый config.js"
+    print_info "Создан базовый config.js"
 fi
 
-# 7. Создание скрипта запуска
-print_message "Создание скрипта запуска..."
-cat > start.sh << 'EOF'
-#!/bin/bash
-export NODE_OPTIONS="--max-old-space-size=512"
-node bot.js
-EOF
+# 9. Настройка PM2
+print_step "9. Настройка PM2..."
+pm2 start bot.js --name "$SERVICE_NAME" --node-args="--max-old-space-size=512"
+pm2 save
+pm2 startup | tail -n 1 > pm2_startup_command.txt
+STARTUP_CMD=$(cat pm2_startup_command.txt)
 
-chmod +x start.sh
+# 10. Создание systemd сервиса
+print_step "10. Создание systemd сервиса..."
 
-# 8. Создание systemd сервиса (опционально)
-print_message "Настройка автозапуска..."
-read -p "Установить автозапуск через systemd? (y/n): " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    SERVICE_NAME="vktotg-bot"
-    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-    
-    sudo bash -c "cat > $SERVICE_FILE" << EOF
+# Создаем временный файл сервиса
+cat > /tmp/${SERVICE_NAME}.service << EOF
 [Unit]
-Description=VK to Telegram Bot
+Description=VK to Telegram Bot Service
 After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
-User=$USER
+User=$USER_NAME
+Group=$USER_NAME
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/node --max-old-space-size=512 $PROJECT_DIR/bot.js
+Environment=NODE_ENV=production
+Environment=PATH=/usr/bin:/usr/local/bin
+ExecStart=/usr/bin/pm2 start $SERVICE_NAME --no-daemon
+ExecReload=/usr/bin/pm2 reload $SERVICE_NAME
+ExecStop=/usr/bin/pm2 stop $SERVICE_NAME
 Restart=always
 RestartSec=10
-Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    sudo systemctl daemon-reload
-    sudo systemctl enable $SERVICE_NAME
-    print_message "Сервис $SERVICE_NAME создан и добавлен в автозагрузку"
-    print_message "Запуск: sudo systemctl start $SERVICE_NAME"
-    print_message "Логи: sudo journalctl -u $SERVICE_NAME -f"
+# Копируем сервис в systemd
+sudo cp /tmp/${SERVICE_NAME}.service $SERVICE_FILE
+rm /tmp/${SERVICE_NAME}.service
+
+# Перезагружаем systemd
+sudo systemctl daemon-reload
+
+# 11. Создание скриптов управления
+print_step "11. Создание скриптов управления..."
+
+# Скрипт для просмотра логов
+cat > "$PROJECT_DIR/logs.sh" << 'EOF'
+#!/bin/bash
+pm2 logs vktotg-bot
+EOF
+
+# Скрипт для перезапуска
+cat > "$PROJECT_DIR/restart.sh" << 'EOF'
+#!/bin/bash
+pm2 restart vktotg-bot
+EOF
+
+# Скрипт для остановки
+cat > "$PROJECT_DIR/stop.sh" << 'EOF'
+#!/bin/bash
+pm2 stop vktotg-bot
+EOF
+
+# Скрипт для статуса
+cat > "$PROJECT_DIR/status.sh" << 'EOF'
+#!/bin/bash
+pm2 status vktotg-bot
+EOF
+
+# Скрипт мониторинга памяти
+cat > "$PROJECT_DIR/monitor.sh" << 'EOF'
+#!/bin/bash
+while true; do
+    clear
+    echo "📊 Мониторинг памяти бота"
+    echo "=========================="
+    pm2 show vktotg-bot | grep "memory"
+    echo ""
+    echo "Нажмите Ctrl+C для выхода"
+    sleep 5
+done
+EOF
+
+# Делаем скрипты исполняемыми
+chmod +x "$PROJECT_DIR"/*.sh
+
+# 12. Создание README с инструкциями
+print_step "12. Создание инструкции..."
+
+cat > "$PROJECT_DIR/README.md" << EOF
+# VK to Telegram Bot
+
+## 📋 Настройка
+
+1. **Отредактируйте конфигурацию:**
+   \`\`\`bash
+   nano $PROJECT_DIR/config.js
+   \`\`\`
+   
+   Укажите:
+   - VK токен (получить на https://vkhost.github.io/)
+   - Telegram токен (от @BotFather)
+   - ID беседы (узнать у @userinfobot)
+
+## 🚀 Управление сервисом
+
+### Через systemd:
+\`\`\`bash
+# Запуск
+sudo systemctl start $SERVICE_NAME
+
+# Остановка
+sudo systemctl stop $SERVICE_NAME
+
+# Перезапуск
+sudo systemctl restart $SERVICE_NAME
+
+# Статус
+sudo systemctl status $SERVICE_NAME
+
+# Автозагрузка
+sudo systemctl enable $SERVICE_NAME
+
+# Просмотр логов
+sudo journalctl -u $SERVICE_NAME -f
+\`\`\`
+
+### Через PM2:
+\`\`\`bash
+# Статус
+pm2 status $SERVICE_NAME
+
+# Логи
+pm2 logs $SERVICE_NAME
+
+# Мониторинг
+pm2 monit
+
+# Перезапуск
+pm2 restart $SERVICE_NAME
+\`\`\`
+
+### Скрипты в папке проекта:
+\`\`\`bash
+./logs.sh     # Просмотр логов
+./status.sh   # Статус бота
+./restart.sh  # Перезапуск
+./stop.sh     # Остановка
+./monitor.sh  # Мониторинг памяти
+\`\`\`
+
+## 📊 Мониторинг
+
+\`\`\`bash
+# Проверка памяти
+pm2 show $SERVICE_NAME | grep memory
+
+# Метрики
+pm2 prettylist | grep -A 10 "monit"
+
+# Все процессы
+pm2 status
+\`\`\`
+
+## 🔧 Устранение проблем
+
+Если бот не запускается:
+\`\`\`bash
+# Проверить логи
+sudo journalctl -u $SERVICE_NAME -f
+
+# Проверить конфигурацию
+node -e "console.log(require('./config.js'))"
+
+# Проверить токены
+curl -X POST https://api.telegram.org/bot<ТОКЕН>/getMe
+\`\`\`
+EOF
+
+# 13. Финальные шаги
+print_step "13. Завершение установки..."
+
+# Включаем и запускаем сервис
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl start $SERVICE_NAME
+
+# Проверяем статус
+sleep 2
+SERVICE_STATUS=$(sudo systemctl is-active $SERVICE_NAME)
+
+echo ""
+echo "============================================="
+echo "✅ УСТАНОВКА ЗАВЕРШЕНА"
+echo "============================================="
+echo ""
+
+if [ "$SERVICE_STATUS" = "active" ]; then
+    print_info "✅ Сервис успешно запущен!"
+else
+    print_warn "⚠️ Сервис не запустился. Проверьте конфигурацию."
 fi
 
-# 9. Финальные сообщения
-print_message "==================================="
-print_message "Установка завершена!"
-print_message "==================================="
 echo ""
-print_message "📁 Директория проекта: $PROJECT_DIR"
-print_message "⚙️  Файл конфигурации: $PROJECT_DIR/config.js"
-print_message "▶️  Запуск бота: ./start.sh"
-print_message "📋 Просмотр логов: tail -f bot.log"
+print_info "📁 Проект установлен в: $PROJECT_DIR"
 echo ""
-print_warning "⚠️  НЕ ЗАБУДЬТЕ:"
-print_warning "1. Отредактировать config.js - указать токены"
-print_warning "2. Получить VK токен (см. инструкцию)"
-print_warning "3. Узнать ID беседы Telegram"
+print_info "🔧 Следующие шаги:"
+echo "1. Отредактируйте конфигурацию:"
+echo "   nano $PROJECT_DIR/config.js"
 echo ""
-print_message "Инструкция по настройке:"
-print_message "1. VK токен: https://vkhost.github.io/"
-print_message "2. Telegram: @BotFather -> создать бота"
-print_message "3. ID чата: @userinfobot"
+echo "2. После редактирования перезапустите сервис:"
+echo "   sudo systemctl restart $SERVICE_NAME"
 echo ""
-print_message "Готово! 🚀"
+print_info "📊 Полезные команды:"
+echo "  • Статус:    sudo systemctl status $SERVICE_NAME"
+echo "  • Логи:      sudo journalctl -u $SERVICE_NAME -f"
+echo "  • PM2 монитор: pm2 monit"
+echo "  • Свои скрипты: cd $PROJECT_DIR && ./logs.sh"
+echo ""
+print_info "📝 Полная инструкция: cat $PROJECT_DIR/README.md"
+echo ""
+echo "============================================="
