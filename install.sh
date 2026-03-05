@@ -13,12 +13,6 @@ print_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
-# Проверка прав
-if [ "$EUID" -eq 0 ]; then 
-    print_error "Не запускайте скрипт от root! Используйте обычного пользователя."
-    exit 1
-fi
-
 clear
 echo "============================================="
 echo "   Установка VK to Telegram бота как сервис"
