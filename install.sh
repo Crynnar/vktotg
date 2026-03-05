@@ -93,7 +93,7 @@ if [ "$GIT_AVAILABLE" = true ]; then
     git clone https://github.com/Crynnar/vktotg.git .
 else
     # Скачиваем архив с GitHub
-    curl -L https://github.com/Crynnar/vktotg/archive/refs/tags/test.tar.gz -o vktotg.tar.gz
+    curl -L https://github.com/Crynnar/vktotg/archive/refs/tags/v.0.0.2.tar.gz -o vktotg.tar.gz
     tar -xzf vktotg.tar.gz --strip-components=1
     rm vktotg.tar.gz
 fi
