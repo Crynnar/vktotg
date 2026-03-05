@@ -138,7 +138,7 @@ fi
 
 # 9. Настройка PM2
 print_step "9. Настройка PM2..."
-pm2 start bot.js --name "$SERVICE_NAME" --node-args="--max-old-space-size=512"
+pm2 start index.js --name "$SERVICE_NAME" --node-args="--max-old-space-size=512"
 pm2 save
 pm2 startup | tail -n 1 > pm2_startup_command.txt
 STARTUP_CMD=$(cat pm2_startup_command.txt)
